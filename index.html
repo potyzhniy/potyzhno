@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Potuzhno Race</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <canvas id="gameCanvas" tabindex="1"></canvas>
+    <div id="screen-flash"></div>
+
+    <div id="hud" class="hidden">
+        <div class="hud-panel">
+            <div class="stat-row">МЕТРИ: <span id="dist-ui" style="color:var(--success)">0</span></div>
+            <div class="stat-row">БЕНЗИН:</div>
+            <div class="fuel-wrap"><div id="fuel-bar"></div></div>
+            <div id="tck-radar">⚠️ ТЦК ЗА: <span id="tck-dist">1000</span>м</div>
+        </div>
+        <div class="hud-panel">
+            <div class="stat-row"><span class="stat-icon">🪙</span> <span id="coins-ui" style="color:var(--primary)">0</span></div>
+            <div class="stat-row"><span class="stat-icon">💎</span> <span id="crystals-ui" style="color:var(--crystal)">0</span></div>
+        </div>
+    </div>
+
+    <div id="main-menu" class="overlay interactive">
+        <div class="glass-panel">
+            <h1>POTUZHNO RACE</h1>
+            <p style="font-size: 22px; color: #bbb; margin-bottom: 30px;">Тікай від реактивного бусіка ТЦК, роби сальто, збирай лут!</p>
+            <div class="hud-panel" style="flex-direction: row; justify-content: center; gap: 40px; margin-bottom: 30px; display: inline-flex;">
+                <div class="stat-row"><span class="stat-icon">🪙</span> <span id="menu-coins" style="color:var(--primary)">0</span></div>
+                <div class="stat-row"><span class="stat-icon">💎</span> <span id="menu-crystals" style="color:var(--crystal)">0</span></div>
+            </div>
+            <br>
+            <button class="btn btn-green" onclick="startGame()">▶ СТАРТ</button>
+            <button class="btn" onclick="showGarage()">🚗 ГАРАЖ</button>
+            <button class="btn btn-admin" onclick="openAdminModal()">👑 АДМІН</button>
+            <div style="margin-top: 25px; color: #aaa; font-size: 15px; font-weight: bold; line-height: 1.6;">
+                УПРАВЛІННЯ:<br>
+                🟢 Вперед: W / D / Стрілка вгору / Стрілка вправо<br>
+                🔴 Назад: S / A / Стрілка вниз / Стрілка вліво<br>
+                ESC — Пауза / Меню
+            </div>
+        </div>
+    </div>
+
+    <div id="garage-menu" class="overlay interactive hidden">
+        <div class="glass-panel" style="width: 1000px;">
+            <h2>ГАРАЖ</h2>
+            <div class="garage-grid" id="garage-grid"></div>
+            
+            <div class="color-picker-wrap">
+                <h3 style="margin:0;">ПОКРАСКА (10 💎)</h3>
+                <input type="color" id="carColorPicker" value="#ff0000">
+                <button class="btn" style="padding: 10px 20px; font-size: 18px;" onclick="buyColor()">КУПИТИ</button>
+            </div>
+            <br>
+            <button class="btn" onclick="showMainMenu()">⬅ В МЕНЮ</button>
+        </div>
+    </div>
+
+    <div id="gameover-menu" class="overlay interactive hidden">
+        <div class="glass-panel">
+            <h1 id="gameover-title" style="color: var(--danger); text-shadow: 0 0 20px red;">СПІЙМАЛИ!</h1>
+            <h2 id="gameover-reason">Тебе запакував бусік...</h2>
+            <div style="font-size: 30px; margin: 20px 0;">Проїхав: <span id="go-dist" style="color: var(--success);">0</span> м</div>
+            <button class="btn btn-green" onclick="startGame()">🔄 ЩЕ РАЗ</button>
+            <button class="btn" onclick="showMainMenu()">🏠 В МЕНЮ</button>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const flashScreen = document.getElementById('screen-flash');
+    
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let audioCtx = null;
+    let musicInterval = null;
+
+    function startRacingMusic() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        if (musicInterval) clearInterval(musicInterval);
+
+        let step = 0;
+        musicInterval = setInterval(() => {
+            if (gameState !== 'play') return;
+            try {
+                let osc = audioCtx.createOscillator();
+                let filter = audioCtx.createBiquadFilter();
+                let gain = audioCtx.createGain();
+
+                osc.type = 'sawtooth';
+                let bassNotes = [110, 110, 146.83, 130.81, 110, 110, 164.81, 196];
+                osc.frequency.setValueAtTime(bassNotes[step % bassNotes.length], audioCtx.currentTime);
+
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(600, audioCtx.currentTime);
+
+                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.12);
+                step++;
+            } catch(e) {}
+        }, 110);
+    }
+
+    function stopRacingMusic() {
+        if (musicInterval) clearInterval(musicInterval);
+    }
+
+    let savedData = JSON.parse(localStorage.getItem('potuzhnoSave_v5')) || { coins: 0, crystals: 0, unlocked: [0], color: '#e74c3c', car: 0 };
+    let coins = savedData.coins;
+    let crystals = savedData.crystals;
+    let unlockedCars = savedData.unlocked;
+    let playerColor = savedData.color;
+    let selectedCarIndex = savedData.car;
+
+    const carsData = [
+        { name: "Таврія", price: 0, speed: 0.85, fuelTank: 100, width: 80, height: 40, img: 'tavria.png' },
+        { name: "Ланос", price: 100, speed: 1.05, fuelTank: 120, width: 90, height: 40, img: 'lanos.png' },
+        { name: "Пріора", price: 500, speed: 1.25, fuelTank: 150, width: 95, height: 40, img: 'priora.png' },
+        { name: "Гелік", price: 2000, speed: 1.45, fuelTank: 200, width: 100, height: 50, img: 'gelik.png' },
+        { name: "Бандеромобіль", price: 5000, speed: 1.75, fuelTank: 300, width: 110, height: 55, img: 'banderomobil.png' }
+    ];
+
+    function saveData() {
+        localStorage.setItem('potuzhnoSave_v5', JSON.stringify({ coins, crystals, unlocked: unlockedCars, color: playerColor, car: selectedCarIndex }));
+        updateMenuUI();
+    }
+
+    const textures = {};
+    function loadTexture(name, src) {
+        textures[name] = { img: new Image(), loaded: false };
+        textures[name].img.onload = () => textures[name].loaded = true;
+        textures[name].img.src = src;
+    }
+    
+    carsData.forEach(c => loadTexture(c.name, c.img));
+    loadTexture('bus', 'bus.png');
+
+    let gameState = 'menu'; 
+    let keys = {};
+    let distance = 0;
+    let cameraX = 0;
+    
+    let car = { x: 0, y: 0, vx: 0, vy: 0, angle: 0, vAngle: 0, fuel: 100, wheelsAngle: 0, onGround: false };
+    let tck = { x: -1000, speed: 0 };
+    let items = [];
+    let particles = [];
+
+    window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        keys[e.key.toLowerCase()] = true;
+        if (e.key === 'Escape') {
+            if (gameState === 'play') showMainMenu();
+            else if (gameState === 'garage') showMainMenu();
+            else if (gameState === 'menu' && distance > 0) startGame();
+        }
+    });
+
+    window.addEventListener('keyup', e => {
+        keys[e.code] = false;
+        keys[e.key.toLowerCase()] = false;
+    });
+
+    function getTerrainY(x) {
+        let y = Math.sin(x / 400) * 120 + Math.sin(x / 800) * 220 + Math.sin(x / 150) * 35;
+        return 500 - y;
+    }
+
+    function spawnItem(xPos) {
+        let r = Math.random();
+        let t = r > 0.75 ? (r > 0.95 ? 1 : 2) : 0;
+        items.push({ x: xPos, y: getTerrainY(xPos) - 40, type: t, collected: false, float: Math.random()*Math.PI*2 });
+    }
+
+    function startGame() {
+        let activeCar = carsData[selectedCarIndex];
+        car = { x: 300, y: getTerrainY(300) - 100, vx: 0, vy: 0, angle: 0, vAngle: 0, fuel: activeCar.fuelTank, wheelsAngle: 0, onGround: false };
+        tck = { x: -600, speed: activeCar.speed * 6 + 4 };
+        distance = 0;
+        items = [];
+        particles = [];
+        cameraX = 0;
+        
+        for(let i = 800; i < 6000; i+= 350) spawnItem(i);
+
+        gameState = 'play';
+        uiMenu.classList.add('hidden'); 
+        uiGarage.classList.add('hidden'); 
+        uiGameover.classList.add('hidden');
+        uiHud.classList.remove('hidden');
+        canvas.focus();
+        
+        startRacingMusic();
+    }
+
+    function update() {
+        if (gameState !== 'play') return;
+        let activeCar = carsData[selectedCarIndex];
+
+        let moveForward = keys['KeyW'] || keys['w'] || keys['KeyD'] || keys['d'] || keys['ArrowUp'] || keys['ArrowRight'];
+        let moveBackward = keys['KeyS'] || keys['s'] || keys['KeyA'] || keys['a'] || keys['ArrowDown'] || keys['ArrowLeft'];
+
+        let groundY = getTerrainY(car.x);
+        let wasOnGround = car.onGround;
+        car.onGround = (car.y >= groundY - activeCar.height/2 - 14);
+
+        if (car.onGround) {
+            let deg = (car.angle * (180 / Math.PI)) % 360;
+            if (deg > 180) deg -= 360;
+            if (deg < -180) deg += 360;
+
+            if (Math.abs(deg) > 75) {
+                endGame("АВАРІЯ!", "Ти приземлився на дах! ТЦК вже тут...");
+                return;
+            }
+
+            if (!wasOnGround) {
+                car.vy = -car.vy * 0.25;
+            }
+
+            car.y = groundY - activeCar.height/2 - 12;
+            car.vAngle *= 0.8;
+            
+            let nextY = getTerrainY(car.x + 15);
+            let slope = Math.atan2(nextY - groundY, 15);
+            
+            car.angle += (slope - car.angle) * 0.3;
+
+            let drivePower = activeCar.speed * 0.8;
+            if (moveForward && car.fuel > 0) { 
+                car.vx += Math.cos(slope) * drivePower; 
+                car.vy += Math.sin(slope) * drivePower * 0.5; 
+                car.fuel -= 0.1;
+                if(Math.random() > 0.4) particles.push({ x: car.x - 40, y: car.y + 10, vx: -2.5 + Math.random(), vy: -1 + Math.random(), life: 1, size: 10 });
+            }
+            if (moveBackward) { 
+                car.vx -= Math.cos(slope) * drivePower * 0.55; 
+                car.fuel -= 0.05; 
+            }
+            
+            car.vx *= 0.975;
+            car.wheelsAngle += car.vx * 0.12;
+        } else {
+            car.vy += 0.48;
+            
+            if (moveForward) car.vAngle += 0.0035;
+            if (moveBackward) car.vAngle -= 0.0035;
+            
+            car.angle += car.vAngle;
+            car.vAngle *= 0.992;
+            car.wheelsAngle += car.vx * 0.06;
+        }
+
+        if (car.vx > 22) car.vx = 22;
+        if (car.vx < -12) car.vx = -12;
+
+        car.x += car.vx;
+        car.y += car.vy;
+        distance = Math.floor(car.x / 10);
+
+        let distDiff = car.x - tck.x;
+        let targetTckSpeed = activeCar.speed * 6 + (distDiff > 800 ? 12 : 3);
+        tck.speed += (targetTckSpeed - tck.speed) * 0.05;
+        tck.x += tck.speed;
+
+        if (items.length > 0 && items[items.length-1].x < car.x + 2500) {
+            spawnItem(items[items.length-1].x + (250 + Math.random()*300));
+        }
+
+        items.forEach(item => {
+            if (!item.collected && Math.abs(car.x - item.x) < 60 && Math.abs(car.y - item.y) < 60) {
+                item.collected = true;
+                if (item.type === 0) coins++;
+                if (item.type === 1) crystals++;
+                if (item.type === 2) car.fuel = Math.min(activeCar.fuelTank, car.fuel + 60);
+                saveData();
+                for(let j=0; j<5; j++) particles.push({ x: item.x, y: item.y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 1, size: 5, color: '#fff' });
+            }
+            item.float += 0.05;
+        });
+
+        particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; p.size += 0.5; });
+        particles = particles.filter(p => p.life > 0);
+
+        if (car.fuel <= 0 && Math.abs(car.vx) < 0.5) endGame("БАК ПУСТИЙ!", "Ти заглух, і тебе наздогнав бусік...");
+        if (tck.x > car.x - 45) endGame("СПІЙМАЛИ!", "Бусік ТЦК заблокував тебе і видав повістку!");
+
+        if (distDiff < 800) {
+            let intensity = 1 - (distDiff / 800);
+            let color = (Date.now() % 400 < 200) ? `rgba(255, 0, 0, ${intensity * 0.35})` : `rgba(0, 0, 255, ${intensity * 0.35})`;
+            flashScreen.style.background = color;
+            flashScreen.style.opacity = 1;
+        } else {
+            flashScreen.style.opacity = 0;
+        }
+
+        updateHUD(distDiff);
+        
+        let targetCamX = car.x - canvas.width * 0.35;
+        cameraX += (targetCamX - cameraX) * 0.1;
+    }
+
+    function draw() {
+        let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        grad.addColorStop(0, '#1a2a6c');
+        grad.addColorStop(0.5, '#b21f1f');
+        grad.addColorStop(1, '#fdbb2d');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#2c3e50';
+        ctx.beginPath();
+        for (let x = 0; x < canvas.width; x += 40) {
+            let pX = x + cameraX * 0.1;
+            ctx.lineTo(x, Math.sin(pX / 300) * 150 + canvas.height/2 + 100);
+        }
+        ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(0, canvas.height); ctx.fill();
+
+        ctx.save();
+        ctx.translate(-cameraX, 0);
+
+        ctx.fillStyle = '#27ae60';
+        ctx.beginPath();
+        for (let x = cameraX - 100; x < cameraX + canvas.width + 100; x += 20) {
+            ctx.lineTo(x, getTerrainY(x));
+        }
+        ctx.lineTo(cameraX + canvas.width + 100, canvas.height + 500);
+        ctx.lineTo(cameraX - 100, canvas.height + 500);
+        ctx.fill();
+        
+        ctx.fillStyle = '#5c4033';
+        ctx.beginPath();
+        for (let x = cameraX - 100; x < cameraX + canvas.width + 100; x += 20) {
+            ctx.lineTo(x, getTerrainY(x) + 15);
+        }
+        ctx.lineTo(cameraX + canvas.width + 100, canvas.height + 500);
+        ctx.lineTo(cameraX - 100, canvas.height + 500);
+        ctx.fill();
+
+        items.forEach(item => {
+            if (item.collected || item.x < cameraX - 100 || item.x > cameraX + canvas.width) return;
+            ctx.save();
+            ctx.translate(item.x, item.y + Math.sin(item.float)*5);
+            if (item.type === 0) {
+                ctx.fillStyle = '#f1c40f'; ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#d35400'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
+            } else if (item.type === 1) {
+                ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 15;
+                ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(12, 0); ctx.lineTo(0, 20); ctx.lineTo(-12, 0); ctx.fill();
+            } else if (item.type === 2) {
+                ctx.fillStyle = '#e74c3c'; ctx.fillRect(-12, -18, 24, 36);
+                ctx.fillStyle = '#c0392b'; ctx.fillRect(-8, -22, 16, 4);
+                ctx.fillStyle = '#fff'; ctx.font = "bold 12px Arial"; ctx.fillText("FUEL", -14, 5);
+            }
+            ctx.restore();
+        });
+
+        particles.forEach(p => {
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color || '#aaa';
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+            ctx.globalAlpha = 1;
+        });
+
+        let activeCar = carsData[selectedCarIndex];
+        drawVehicle(car.x, car.y, car.angle, activeCar.width, activeCar.height, textures[activeCar.name], playerColor, car.wheelsAngle, activeCar.name);
+
+        if (tck.x > cameraX - 500) {
+            let tY = getTerrainY(tck.x);
+            let nY = getTerrainY(tck.x + 10);
+            let tAng = Math.atan2(nY - tY, 10);
+            drawVehicle(tck.x, tY - 20, tAng, 140, 60, textures['bus'], '#4A5D23', car.wheelsAngle * 1.5, "ТЦК", true);
+        }
+
+        ctx.restore();
+    }
+
+    function drawVehicle(x, y, angle, w, h, texObj, color, wheelAng, text, isBus=false) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        
+        if (texObj && texObj.loaded) {
+            ctx.drawImage(texObj.img, -w/2, -h/2, w, h);
+        } else {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            if(isBus) {
+                ctx.roundRect(-w/2, -h/2, w, h, 10); ctx.fill();
+                ctx.fillStyle = '#111'; ctx.fillRect(w/4, -h/2+10, 20, 20);
+                ctx.fillStyle = (Date.now() % 300 < 150) ? 'red' : 'blue';
+                ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 20;
+                ctx.fillRect(0, -h/2 - 10, 30, 10);
+                ctx.shadowBlur = 0;
+            } else {
+                ctx.roundRect(-w/2, -h/4, w, h/2, 8); ctx.fill();
+                ctx.roundRect(-w/4, -h/2, w/2, h/2, 10); ctx.fill();
+                ctx.fillStyle = '#87CEEB';
+                ctx.beginPath(); ctx.moveTo(-w/4 + 5, -h/4); ctx.lineTo(-w/4 + 15, -h/2 + 5); ctx.lineTo(w/4 - 15, -h/2 + 5); ctx.lineTo(w/4 - 5, -h/4); ctx.fill();
+            }
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.font = "bold 16px 'Russo One'";
+            ctx.fillText(text, -w/4, isBus ? 5 : -5);
+        }
+
+        let wheelR = isBus ? 18 : 14;
+        let wx = w/2 - 20; let wy = h/2;
+        
+        ctx.fillStyle = '#222';
+        [[-wx, wy], [wx, wy]].forEach(pos => {
+            ctx.save();
+            ctx.translate(pos[0], pos[1]);
+            ctx.rotate(wheelAng);
+            ctx.beginPath(); ctx.arc(0, 0, wheelR, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#ccc';
+            ctx.beginPath(); ctx.arc(0, 0, wheelR/2, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#222';
+            for(let i=0; i<4; i++) { ctx.fillRect(-2, -wheelR/2, 4, wheelR/2); ctx.rotate(Math.PI/2); }
+            ctx.restore();
+        });
+
+        ctx.restore();
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    const uiMenu = document.getElementById('main-menu');
+    const uiGarage = document.getElementById('garage-menu');
+    const uiGameover = document.getElementById('gameover-menu');
+    const uiHud = document.getElementById('hud');
+
+    function updateMenuUI() {
+        document.getElementById('menu-coins').innerText = coins;
+        document.getElementById('menu-crystals').innerText = crystals;
+        document.getElementById('coins-ui').innerText = coins;
+        document.getElementById('crystals-ui').innerText = crystals;
+    }
+
+    function updateHUD(distToTck) {
+        let maxFuel = carsData[selectedCarIndex].fuelTank;
+        let fuelPct = Math.max(0, (car.fuel / maxFuel) * 100);
+        document.getElementById('fuel-bar').style.width = fuelPct + '%';
+        document.getElementById('dist-ui').innerText = distance;
+        
+        let tckRadar = document.getElementById('tck-dist');
+        let distMeters = Math.max(0, Math.floor(distToTck / 10));
+        tckRadar.innerText = distMeters;
+        
+        if (distMeters < 50) tckRadar.style.color = '#ff0000';
+        else tckRadar.style.color = '#fff';
+    }
+
+    function showMainMenu() {
+        gameState = 'menu';
+        stopRacingMusic();
+        updateMenuUI();
+        uiMenu.classList.remove('hidden'); 
+        uiGarage.classList.add('hidden'); 
+        uiGameover.classList.add('hidden');
+        uiHud.classList.add('hidden'); 
+        flashScreen.style.opacity = 0;
+    }
+
+    function endGame(title, reason) {
+        gameState = 'gameover';
+        stopRacingMusic();
+        document.getElementById('gameover-title').innerText = title;
+        document.getElementById('gameover-reason').innerText = reason;
+        document.getElementById('go-dist').innerText = distance;
+        
+        uiMenu.classList.add('hidden'); 
+        uiHud.classList.add('hidden');
+        uiGameover.classList.remove('hidden');
+    }
+
+    function showGarage() {
+        gameState = 'garage';
+        uiMenu.classList.add('hidden'); 
+        uiGarage.classList.remove('hidden');
+        renderGarage();
+    }
+
+    function renderGarage() {
+        const grid = document.getElementById('garage-grid');
+        grid.innerHTML = '';
+        
+        carsData.forEach((c, index) => {
+            let isUnlocked = unlockedCars.includes(index);
+            let isSelected = selectedCarIndex === index;
+            
+            grid.innerHTML += `
+                <div class="car-card ${isSelected ? 'selected' : ''} ${!isUnlocked ? 'locked' : ''}" onclick="selectCar(${index})">
+                    <h3 style="margin:0 0 10px 0; color:#fff; font-family:'Russo One'">${c.name}</h3>
+                    <div style="font-size:14px; color:#bbb; margin-bottom: 10px;">
+                        Швидкість: <span style="color:#2ecc71">★ ${c.speed}</span><br>
+                        Бак: <span style="color:#e74c3c">⛽ ${c.fuelTank}</span>
+                    </div>
+                    ${!isUnlocked ? `<div style="font-size:20px; font-weight:bold; color:var(--primary);">🪙 ${c.price}</div>` : `<div style="color:var(--success); font-weight:bold;">ВИБРАНО</div>`}
+                </div>
+            `;
+        });
+        document.getElementById('carColorPicker').value = playerColor;
+    }
+
+    function selectCar(index) {
+        let c = carsData[index];
+        if (unlockedCars.includes(index)) {
+            selectedCarIndex = index; saveData(); renderGarage();
+        } else if (coins >= c.price) {
+            coins -= c.price; unlockedCars.push(index); selectedCarIndex = index; saveData(); renderGarage();
+        } else {
+            alert("Не вистачає монет!");
+        }
+    }
+
+    function buyColor() {
+        if (crystals >= 10) {
+            crystals -= 10; 
+            playerColor = document.getElementById('carColorPicker').value; 
+            saveData(); 
+            alert("Пофарбовано!");
+        } else {
+            alert("Потрібно 10 💎!"); 
+            document.getElementById('carColorPicker').value = playerColor;
+        }
+    }
+
+    function openAdminModal() {
+        let pass = prompt("Введіть пароль адміністратора:");
+        if (pass && btoa(pass) === "Y0Y4LW92TzMreHlKOSFv") {
+            coins += 50000;
+            crystals += 500;
+            unlockedCars = [0, 1, 2, 3, 4];
+            saveData();
+            updateMenuUI();
+            alert("👑 Адмін-режим активовано! Усі машини розблоковано, нараховано бонуси!");
+        } else if (pass !== null) {
+            alert("❌ Неправильний пароль!");
+        }
+    }
+
+    updateMenuUI();
+    gameLoop();
+</script>
+</body>
+</html>
