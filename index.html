@@ -27,8 +27,7 @@
     <div id="main-menu" class="overlay interactive">
         <div class="glass-panel">
             <h1>POTUZHNO RACE</h1>
-            <p style="font-size: 22px; color: #bbb; margin-bottom: 30px;">ЕКСТРЕМАЛЬНИЙ РЕЖИМ: ТЦК летить на реактивній тязі!</p>
-            <div class="hud-panel" style="flex-direction: row; justify-content: center; gap: 40px; margin-bottom: 30px; display: inline-flex;">
+            <div class="hud-panel" style="flex-direction: row; justify-content: center; gap: 40px; margin-bottom: 30px; margin-top: 20px; display: inline-flex;">
                 <div class="stat-row"><span class="stat-icon">🪙</span> <span id="menu-coins" style="color:var(--primary)">0</span></div>
                 <div class="stat-row"><span class="stat-icon">💎</span> <span id="menu-crystals" style="color:var(--crystal)">0</span></div>
             </div>
@@ -129,13 +128,14 @@
     let unlockedCars = savedData.unlocked;
     let playerColor = savedData.color;
     let selectedCarIndex = savedData.car;
+    let isAdmin = false;
 
     const carsData = [
-        { name: "Таврія", price: 0, speed: 0.85, fuelTank: 100, width: 80, height: 40, img: 'tavria.png' },
-        { name: "Ланос", price: 100, speed: 1.05, fuelTank: 120, width: 90, height: 40, img: 'lanos.png' },
-        { name: "Пріора", price: 500, speed: 1.25, fuelTank: 150, width: 95, height: 40, img: 'priora.png' },
-        { name: "Гелік", price: 2000, speed: 1.45, fuelTank: 200, width: 100, height: 50, img: 'gelik.png' },
-        { name: "Бандеромобіль", price: 5000, speed: 1.75, fuelTank: 300, width: 110, height: 55, img: 'banderomobil.png' }
+        { name: "Таврія", price: 0, speed: 0.65, fuelTank: 100, width: 80, height: 40, img: 'tavria.png' },
+        { name: "Ланос", price: 100, speed: 0.80, fuelTank: 120, width: 90, height: 40, img: 'lanos.png' },
+        { name: "Пріора", price: 500, speed: 0.95, fuelTank: 150, width: 95, height: 40, img: 'priora.png' },
+        { name: "Гелік", price: 2000, speed: 1.15, fuelTank: 200, width: 100, height: 50, img: 'gelik.png' },
+        { name: "Бандеромобіль", price: 5000, speed: 1.40, fuelTank: 300, width: 110, height: 55, img: 'banderomobil.png' }
     ];
 
     function saveData() {
@@ -159,7 +159,7 @@
     let cameraX = 0;
     
     let car = { x: 0, y: 0, vx: 0, vy: 0, angle: 0, vAngle: 0, fuel: 100, wheelsAngle: 0, onGround: false };
-    let tck = { x: -1000, speed: 0 };
+    let tck = { x: -300, speed: 0 };
     let items = [];
     let particles = [];
 
@@ -190,10 +190,11 @@
     }
 
     function startGame() {
+        isAdmin = false;
         let activeCar = carsData[selectedCarIndex];
-
-        car = { x: 300, y: getTerrainY(300) - 100, vx: 0, vy: 0, angle: 0, vAngle: 0, fuel: activeCar.fuelTank * 0.7, wheelsAngle: 0, onGround: false };
-        tck = { x: -250, speed: activeCar.speed * 8.5 + 8 };
+        
+        car = { x: 300, y: getTerrainY(300) - 100, vx: 0, vy: 0, angle: 0, vAngle: 0, fuel: activeCar.fuelTank, wheelsAngle: 0, onGround: false };
+        tck = { x: -300, speed: activeCar.speed * 7.0 + 5.5 }; // Швидкість ТЦК повернено на високий рівень
         distance = 0;
         items = [];
         particles = [];
@@ -226,59 +227,62 @@
             let deg = (car.angle * (180 / Math.PI)) % 360;
             if (deg > 180) deg -= 360;
             if (deg < -180) deg += 360;
-            
-            if (Math.abs(deg) > 50) {
-                endGame("АВАРІЯ!", "Ти приземлився на дах! ТЦК вже тут...");
+
+            if (Math.abs(deg) > 95) {
+                endGame("АВАРІЯ!", "Ти перекинувся на дах! ТЦК наздогнав...");
                 return;
             }
 
             if (!wasOnGround) {
-                car.vy = -car.vy * 0.25;
+                car.vy = -car.vy * 0.2;
             }
 
             car.y = groundY - activeCar.height/2 - 12;
-            car.vAngle *= 0.8;
+            car.vAngle *= 0.7;
             
             let nextY = getTerrainY(car.x + 15);
             let slope = Math.atan2(nextY - groundY, 15);
             
-            car.angle += (slope - car.angle) * 0.3;
+            car.angle += (slope - car.angle) * 0.5;
 
-            let drivePower = activeCar.speed * 0.8;
+            let drivePower = activeCar.speed * 0.7;
             if (moveForward && car.fuel > 0) { 
                 car.vx += Math.cos(slope) * drivePower; 
                 car.vy += Math.sin(slope) * drivePower * 0.5; 
-                car.fuel -= 0.22;
+                car.fuel -= 0.10; 
                 if(Math.random() > 0.4) particles.push({ x: car.x - 40, y: car.y + 10, vx: -2.5 + Math.random(), vy: -1 + Math.random(), life: 1, size: 10 });
             }
             if (moveBackward) { 
                 car.vx -= Math.cos(slope) * drivePower * 0.55; 
-                car.fuel -= 0.1; 
+                car.fuel -= 0.05; 
             }
             
             car.vx *= 0.975;
             car.wheelsAngle += car.vx * 0.12;
         } else {
-            car.vy += 0.55;
+            car.vy += 0.48; 
             
-            if (moveForward) car.vAngle += 0.0045;
-            if (moveBackward) car.vAngle -= 0.0045;
+            if (moveForward) car.vAngle += 0.005;
+            if (moveBackward) car.vAngle -= 0.005;
             
             car.angle += car.vAngle;
-            car.vAngle *= 0.992;
+            car.vAngle *= 0.95;
             car.wheelsAngle += car.vx * 0.06;
         }
 
-        if (car.vx > 22) car.vx = 22;
-        if (car.vx < -12) car.vx = -12;
+        if (car.vx > 16) car.vx = 16;
+        if (car.vx < -10) car.vx = -10;
 
         car.x += car.vx;
         car.y += car.vy;
         distance = Math.floor(car.x / 10);
 
         let distDiff = car.x - tck.x;
-        // ХАРДКОР: ТЦК набагато швидший і агресивніший
-        let targetTckSpeed = activeCar.speed * 7.5 + 5;
+        
+        let distanceMeters = distance;
+        let speedBonus = Math.floor(distanceMeters / 1000) * 0.5;
+        let targetTckSpeed = (activeCar.speed * 7.0 + 5.5) + speedBonus;
+        
         tck.speed += (targetTckSpeed - tck.speed) * 0.08;
         tck.x += tck.speed;
 
@@ -291,7 +295,7 @@
                 item.collected = true;
                 if (item.type === 0) coins++;
                 if (item.type === 1) crystals++;
-                if (item.type === 2) car.fuel = Math.min(activeCar.fuelTank, car.fuel + 40); // Меньше бензину від каністри
+                if (item.type === 2) car.fuel = Math.min(activeCar.fuelTank, car.fuel + 60); 
                 saveData();
                 for(let j=0; j<5; j++) particles.push({ x: item.x, y: item.y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 1, size: 5, color: '#fff' });
             }
@@ -306,7 +310,7 @@
 
         if (distDiff < 800) {
             let intensity = 1 - (distDiff / 800);
-            let color = (Date.now() % 400 < 200) ? `rgba(255, 0, 0, ${intensity * 0.35})` : `rgba(0, 0, 255, ${intensity * 0.35})`;
+            let color = (Date.now() % 400 < 200) ? `rgba(255, 0, 0, ${intensity * 0.25})` : `rgba(0, 0, 255, ${intensity * 0.25})`;
             flashScreen.style.background = color;
             flashScreen.style.opacity = 1;
         } else {
@@ -551,6 +555,7 @@
     function openAdminModal() {
         let pass = prompt("Введіть пароль адміністратора:");
         if (pass && btoa(pass) === "Y0Y4LW92TzMreHlKOSFv") {
+            isAdmin = true;
             coins += 50000;
             crystals += 500;
             unlockedCars = [0, 1, 2, 3, 4];
