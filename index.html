@@ -27,7 +27,7 @@
     <div id="main-menu" class="overlay interactive">
         <div class="glass-panel">
             <h1>POTUZHNO RACE</h1>
-            <p style="font-size: 22px; color: #bbb; margin-bottom: 30px;">Тікай від реактивного бусіка ТЦК, роби сальто, збирай лут!</p>
+            <p style="font-size: 22px; color: #bbb; margin-bottom: 30px;">ЕКСТРЕМАЛЬНИЙ РЕЖИМ: ТЦК летить на реактивній тязі!</p>
             <div class="hud-panel" style="flex-direction: row; justify-content: center; gap: 40px; margin-bottom: 30px; display: inline-flex;">
                 <div class="stat-row"><span class="stat-icon">🪙</span> <span id="menu-coins" style="color:var(--primary)">0</span></div>
                 <div class="stat-row"><span class="stat-icon">💎</span> <span id="menu-crystals" style="color:var(--crystal)">0</span></div>
@@ -191,8 +191,9 @@
 
     function startGame() {
         let activeCar = carsData[selectedCarIndex];
-        car = { x: 300, y: getTerrainY(300) - 100, vx: 0, vy: 0, angle: 0, vAngle: 0, fuel: activeCar.fuelTank, wheelsAngle: 0, onGround: false };
-        tck = { x: -600, speed: activeCar.speed * 6 + 4 };
+
+        car = { x: 300, y: getTerrainY(300) - 100, vx: 0, vy: 0, angle: 0, vAngle: 0, fuel: activeCar.fuelTank * 0.7, wheelsAngle: 0, onGround: false };
+        tck = { x: -250, speed: activeCar.speed * 8.5 + 8 };
         distance = 0;
         items = [];
         particles = [];
@@ -225,8 +226,8 @@
             let deg = (car.angle * (180 / Math.PI)) % 360;
             if (deg > 180) deg -= 360;
             if (deg < -180) deg += 360;
-
-            if (Math.abs(deg) > 75) {
+            
+            if (Math.abs(deg) > 50) {
                 endGame("АВАРІЯ!", "Ти приземлився на дах! ТЦК вже тут...");
                 return;
             }
@@ -247,21 +248,21 @@
             if (moveForward && car.fuel > 0) { 
                 car.vx += Math.cos(slope) * drivePower; 
                 car.vy += Math.sin(slope) * drivePower * 0.5; 
-                car.fuel -= 0.1;
+                car.fuel -= 0.22;
                 if(Math.random() > 0.4) particles.push({ x: car.x - 40, y: car.y + 10, vx: -2.5 + Math.random(), vy: -1 + Math.random(), life: 1, size: 10 });
             }
             if (moveBackward) { 
                 car.vx -= Math.cos(slope) * drivePower * 0.55; 
-                car.fuel -= 0.05; 
+                car.fuel -= 0.1; 
             }
             
             car.vx *= 0.975;
             car.wheelsAngle += car.vx * 0.12;
         } else {
-            car.vy += 0.48;
+            car.vy += 0.55;
             
-            if (moveForward) car.vAngle += 0.0035;
-            if (moveBackward) car.vAngle -= 0.0035;
+            if (moveForward) car.vAngle += 0.0045;
+            if (moveBackward) car.vAngle -= 0.0045;
             
             car.angle += car.vAngle;
             car.vAngle *= 0.992;
@@ -276,8 +277,9 @@
         distance = Math.floor(car.x / 10);
 
         let distDiff = car.x - tck.x;
-        let targetTckSpeed = activeCar.speed * 6 + (distDiff > 800 ? 12 : 3);
-        tck.speed += (targetTckSpeed - tck.speed) * 0.05;
+        // ХАРДКОР: ТЦК набагато швидший і агресивніший
+        let targetTckSpeed = activeCar.speed * 7.5 + 5;
+        tck.speed += (targetTckSpeed - tck.speed) * 0.08;
         tck.x += tck.speed;
 
         if (items.length > 0 && items[items.length-1].x < car.x + 2500) {
@@ -289,7 +291,7 @@
                 item.collected = true;
                 if (item.type === 0) coins++;
                 if (item.type === 1) crystals++;
-                if (item.type === 2) car.fuel = Math.min(activeCar.fuelTank, car.fuel + 60);
+                if (item.type === 2) car.fuel = Math.min(activeCar.fuelTank, car.fuel + 40); // Меньше бензину від каністри
                 saveData();
                 for(let j=0; j<5; j++) particles.push({ x: item.x, y: item.y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 1, size: 5, color: '#fff' });
             }
